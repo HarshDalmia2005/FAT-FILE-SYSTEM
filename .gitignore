@@ -1,0 +1,3 @@
+*.o
+vfs_test
+virtual_disk.bin
