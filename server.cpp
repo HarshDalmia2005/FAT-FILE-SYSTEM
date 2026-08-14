@@ -10,12 +10,16 @@
 #include <unistd.h>
 #include <cstring>
 #include <sstream>
+#include <thread>
+#include <pthread.h>
 
-void handle_client(int client_fd, VFS& vfs, Disk& disk) {
+pthread_rwlock_t vfs_lock;
+
+void handle_client(int client_fd, VFS* vfs) {
     while (true) {
         RequestHeader req;
         ssize_t bytes_read = read(client_fd, &req, sizeof(req));
-        if (bytes_read <= 0) break; // Client disconnected or error
+        if (bytes_read <= 0) break; 
         
         std::string path(req.path_len, '\0');
         if (req.path_len > 0) {
@@ -32,6 +36,7 @@ void handle_client(int client_fd, VFS& vfs, Disk& disk) {
         
         switch (req.type) {
             case CMD_MKDIR: {
+                pthread_rwlock_wrlock(&vfs_lock);
                 uint32_t out_block;
                 size_t last_slash = path.find_last_of('/');
                 if (last_slash != std::string::npos) {
@@ -40,15 +45,17 @@ void handle_client(int client_fd, VFS& vfs, Disk& disk) {
                     std::string dirname = path.substr(last_slash + 1);
                     
                     DirectoryEntry parent_entry;
-                    if (vfs.resolve_path(parent_path, parent_entry)) {
-                        if (vfs.create_entry(parent_entry.start_block, dirname, ATTR_DIR, out_block)) {
+                    if (vfs->resolve_path(parent_path, parent_entry)) {
+                        if (vfs->create_entry(parent_entry.start_block, dirname, ATTR_DIR, out_block)) {
                             res.status = 0;
                         }
                     }
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
             case CMD_TOUCH: {
+                pthread_rwlock_wrlock(&vfs_lock);
                 uint32_t out_block;
                 size_t last_slash = path.find_last_of('/');
                 if (last_slash != std::string::npos) {
@@ -57,25 +64,29 @@ void handle_client(int client_fd, VFS& vfs, Disk& disk) {
                     std::string filename = path.substr(last_slash + 1);
                     
                     DirectoryEntry parent_entry;
-                    if (vfs.resolve_path(parent_path, parent_entry)) {
-                        if (vfs.create_entry(parent_entry.start_block, filename, ATTR_FILE, out_block)) {
+                    if (vfs->resolve_path(parent_path, parent_entry)) {
+                        if (vfs->create_entry(parent_entry.start_block, filename, ATTR_FILE, out_block)) {
                             res.status = 0;
                         }
                     }
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
             case CMD_RMDIR:
             case CMD_RM: {
-                if (vfs.remove_entry(path)) {
+                pthread_rwlock_wrlock(&vfs_lock);
+                if (vfs->remove_entry(path)) {
                     res.status = 0;
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
             case CMD_LS: {
+                pthread_rwlock_rdlock(&vfs_lock);
                 DirectoryEntry entry;
-                if (vfs.resolve_path(path, entry) && entry.attributes == ATTR_DIR) {
-                    auto contents = vfs.list_directory(entry.start_block);
+                if (vfs->resolve_path(path, entry) && entry.attributes == ATTR_DIR) {
+                    auto contents = vfs->list_directory(entry.start_block);
                     std::ostringstream oss;
                     for (const auto& item : contents) {
                         oss << (item.attributes == ATTR_DIR ? "d " : "- ") << item.filename << " " << item.size << "\n";
@@ -85,19 +96,24 @@ void handle_client(int client_fd, VFS& vfs, Disk& disk) {
                     res.data_len = res_data.size();
                     res.status = 0;
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
             case CMD_READ: {
-                if (vfs.read_file(path, res_data)) {
+                pthread_rwlock_rdlock(&vfs_lock);
+                if (vfs->read_file(path, res_data)) {
                     res.data_len = res_data.size();
                     res.status = 0;
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
             case CMD_WRITE: {
-                if (vfs.write_file(path, data)) {
+                pthread_rwlock_wrlock(&vfs_lock);
+                if (vfs->write_file(path, data)) {
                     res.status = 0;
                 }
+                pthread_rwlock_unlock(&vfs_lock);
                 break;
             }
         }
@@ -111,6 +127,8 @@ void handle_client(int client_fd, VFS& vfs, Disk& disk) {
 }
 
 int main() {
+    pthread_rwlock_init(&vfs_lock, NULL);
+
     Disk disk("virtual_disk.bin");
     if (!disk.mount()) {
         std::cerr << "Failed to mount disk. Make sure to format it first!" << std::endl;
@@ -132,7 +150,7 @@ int main() {
         return 1;
     }
     
-    if (listen(server_fd, 5) == -1) {
+    if (listen(server_fd, 50) == -1) {
         perror("listen");
         return 1;
     }
@@ -142,13 +160,13 @@ int main() {
     while (true) {
         int client_fd = accept(server_fd, NULL, NULL);
         if (client_fd != -1) {
-            std::cout << "Client connected." << std::endl;
-            handle_client(client_fd, vfs, disk);
-            std::cout << "Client disconnected." << std::endl;
+            std::thread t(handle_client, client_fd, &vfs);
+            t.detach();
         }
     }
     
     close(server_fd);
     unlink(SOCKET_PATH);
+    pthread_rwlock_destroy(&vfs_lock);
     return 0;
 }

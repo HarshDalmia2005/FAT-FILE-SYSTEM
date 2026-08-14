@@ -171,4 +171,36 @@ Hello World!
 vfs:/docs$ exit
 ```
 
-*Upcoming in Phase 5: Thread-Safe Readers-Writer Locks.*
+## Phase 5: Thread-Safe Readers-Writer Locks
+
+To support concurrent file operations without corrupting the file allocation table or directory entries, the VFS server daemon employs multithreading and reader-writer locks.
+
+### 1. Concurrent Connections
+The server daemon spawns a new detached thread (`std::thread`) for every incoming client connection. This allows multiple clients to connect and send commands simultaneously without blocking each other.
+
+### 2. Synchronization (`pthread_rwlock_t`)
+A global Readers-Writer Lock protects the underlying Virtual File System:
+- **Read Operations (`ls`, `read`)**: Acquire a read lock (`pthread_rwlock_rdlock`). Multiple clients can read from the disk concurrently, maximizing throughput for read-heavy workloads.
+- **Write Operations (`mkdir`, `touch`, `write`, `rm`)**: Acquire an exclusive write lock (`pthread_rwlock_wrlock`). Only one client can modify the FAT or directory structure at a time, ensuring data integrity and preventing race conditions.
+
+### How to Compile and Test Phase 5
+A dedicated stress test script is provided to simulate heavy concurrent load. It formats the disk, starts the server in the background, and launches 100 concurrent clients (50 readers and 50 writers) simultaneously.
+
+```bash
+make clean && make
+
+# Run the automated stress test
+chmod +x stress_test.sh
+./stress_test.sh
+```
+
+Expected output:
+```text
+Starting stress test...
+Verifying results...
+Successfully created and listed 50 files out of 50.
+SUCCESS: Thread-safety verified! No race conditions detected.
+Stress test complete.
+```
+
+*Upcoming in Phase 6: Circular Metadata Journaling.*
