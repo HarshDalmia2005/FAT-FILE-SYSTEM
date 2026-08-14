@@ -203,4 +203,21 @@ SUCCESS: Thread-safety verified! No race conditions detected.
 Stress test complete.
 ```
 
-*Upcoming in Phase 6: Circular Metadata Journaling.*
+## Phase 6: Circular Metadata Journaling
+
+To prevent metadata corruption on sudden crashes or power failures, the Virtual File System uses physical intent logging, inspired by modern journaling file systems like ext3.
+
+### 1. The Journal Area
+During disk formatting, a segment of the virtual disk is reserved exclusively for the Journal (e.g., 256 blocks starting at Block 257). This area is treated as a circular intent log.
+
+### 2. Transaction Lifecycle
+Before modifying any FAT block or Directory Entry block, the file system writes the intent to the journal area in a two-step process:
+- **Logging**: The targeted metadata block's new data is written to a data block in the Journal Area. A corresponding Journal Header block is also written, marking the state as `PENDING` along with the target block's actual address.
+- **Committing**: Once the journal entry is secure on the disk, the VFS or FAT modifies the actual physical block on the disk. After the write succeeds, the Journal Header is updated to `COMMITTED`.
+
+### 3. Crash Recovery (Replay)
+When the VFS server daemon starts and mounts the virtual disk, it iterates through the Journal Area before serving any clients. 
+If it discovers any `PENDING` transactions, it indicates that a crash occurred *after* logging but *before* or *during* the actual disk write. The server automatically recovers from this by reading the data from the journal and re-writing it to the target block on the disk, followed by marking the entry as `COMMITTED`. This ensures that the file system structure is always logically consistent.
+
+### The Complete System
+The FAT Virtual File System is now complete! It is a fully functional, multithreaded, crash-resilient file system simulator that mimics the core concepts used in OS development.

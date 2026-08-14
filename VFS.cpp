@@ -3,7 +3,12 @@
 #include <cstring>
 #include <sstream>
 
-VFS::VFS(Disk& d, FAT& f) : disk(d), fat(f) {}
+VFS::VFS(Disk& d, FAT& f, Journal* j) : disk(d), fat(f), journal(j) {}
+
+bool VFS::safe_disk_write(uint32_t block, const void* data) {
+    if (journal) return journal->safe_write_block(block, data);
+    return disk.write_block(block, data);
+}
 
 std::vector<std::string> VFS::split_path(const std::string& path) const {
     std::vector<std::string> tokens;
@@ -25,7 +30,7 @@ bool VFS::format() {
     // We just need to initialize the first block of the root directory with zeros (all entries UNUSED).
     
     std::vector<char> zeros(sb.block_size, 0);
-    if (!disk.write_block(sb.root_dir_start_block, zeros.data())) {
+    if (!safe_disk_write(sb.root_dir_start_block, zeros.data())) {
         std::cerr << "Failed to initialize root directory block." << std::endl;
         return false;
     }
@@ -97,7 +102,7 @@ bool VFS::create_entry(uint32_t parent_dir_block, const std::string& filename, u
                 // If it's a directory, initialize it with 0s
                 if (attributes == ATTR_DIR) {
                     std::vector<char> zeros(sb.block_size, 0);
-                    disk.write_block(out_start_block, zeros.data());
+                    safe_disk_write(out_start_block, zeros.data());
                 }
                 
                 strncpy(entries[i].filename, filename.c_str(), 244);
@@ -105,7 +110,7 @@ bool VFS::create_entry(uint32_t parent_dir_block, const std::string& filename, u
                 entries[i].size = 0;
                 entries[i].attributes = attributes;
                 
-                return disk.write_block(current_block, buffer.data());
+                return safe_disk_write(current_block, buffer.data());
             }
         }
         last_block = current_block;
@@ -126,7 +131,7 @@ bool VFS::create_entry(uint32_t parent_dir_block, const std::string& filename, u
     
     if (attributes == ATTR_DIR) {
         std::vector<char> dir_zeros(sb.block_size, 0);
-        disk.write_block(out_start_block, dir_zeros.data());
+        safe_disk_write(out_start_block, dir_zeros.data());
     }
     
     strncpy(entries[0].filename, filename.c_str(), 244);
@@ -134,7 +139,7 @@ bool VFS::create_entry(uint32_t parent_dir_block, const std::string& filename, u
     entries[0].size = 0;
     entries[0].attributes = attributes;
     
-    return disk.write_block(new_dir_block, zeros.data());
+    return safe_disk_write(new_dir_block, zeros.data());
 }
 
 bool VFS::resolve_path(const std::string& path, DirectoryEntry& out_entry) {
@@ -268,7 +273,7 @@ bool VFS::remove_entry(const std::string& path) {
     DirectoryEntry* entries = reinterpret_cast<DirectoryEntry*>(buffer.data());
     entries[entry_offset].attributes = ATTR_UNUSED;
     
-    return disk.write_block(current_block, buffer.data());
+    return safe_disk_write(current_block, buffer.data());
 }
 
 bool VFS::read_file(const std::string& path, std::vector<char>& out_data) {
@@ -330,7 +335,7 @@ bool VFS::write_file(const std::string& path, const std::vector<char>& data) {
             uint32_t bytes_to_copy = std::min((uint32_t)sb.block_size, (uint32_t)data.size() - bytes_written);
             std::memcpy(buffer.data(), data.data() + bytes_written, bytes_to_copy);
             
-            if (!disk.write_block(current_block, buffer.data())) return false;
+            if (!safe_disk_write(current_block, buffer.data())) return false;
             
             bytes_written += bytes_to_copy;
             previous_block = current_block;
@@ -339,7 +344,7 @@ bool VFS::write_file(const std::string& path, const std::vector<char>& data) {
         new_start_block = fat.allocate_block();
         if (new_start_block == 0) return false;
         std::vector<char> buffer(sb.block_size, 0);
-        disk.write_block(new_start_block, buffer.data());
+        safe_disk_write(new_start_block, buffer.data());
     }
     
     uint32_t entries_per_block = sb.block_size / sizeof(DirectoryEntry);
@@ -358,5 +363,5 @@ bool VFS::write_file(const std::string& path, const std::vector<char>& data) {
     entries[entry_offset].start_block = new_start_block;
     entries[entry_offset].size = data.size();
     
-    return disk.write_block(dir_block, buffer.data());
+    return safe_disk_write(dir_block, buffer.data());
 }

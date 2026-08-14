@@ -19,16 +19,21 @@ struct DirectoryEntry {
 };
 #pragma pack(pop)
 
+#include "Journal.h"
+
 class VFS {
 private:
     Disk& disk;
     FAT& fat;
+    Journal* journal;
+    
+    bool safe_disk_write(uint32_t block, const void* data);
 
     // Helper to split a path by '/'
     std::vector<std::string> split_path(const std::string& path) const;
 
 public:
-    VFS(Disk& d, FAT& f);
+    VFS(Disk& d, FAT& f, Journal* j = nullptr);
 
     // Initializes the root directory on a freshly formatted disk
     bool format();

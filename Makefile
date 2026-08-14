@@ -2,7 +2,7 @@ CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -pthread -O2
 LDFLAGS = -pthread
 
-CORE_OBJS = Disk.o FAT.o VFS.o
+CORE_OBJS = Disk.o FAT.o VFS.o Journal.o
 
 all: vfs_test vfs_server vfs_client
 

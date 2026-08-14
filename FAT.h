@@ -4,9 +4,12 @@
 #include <vector>
 #include <cstdint>
 
+#include "Journal.h"
+
 class FAT {
 private:
     Disk& disk;
+    Journal* journal;
     std::vector<uint32_t> table;
 
     // Writes a single FAT block from memory to the virtual disk
@@ -17,7 +20,7 @@ public:
     static const uint32_t FAT_EOF = 0xFFFFFFFF;
     static const uint32_t FAT_BAD = 0xFFFFFFF7;
 
-    FAT(Disk& d);
+    FAT(Disk& d, Journal* j = nullptr);
     
     // Initializes the FAT array for a newly formatted disk 
     // Marks system blocks (Superblock, FAT itself, Journal, Root Dir) as EOF/Reserved

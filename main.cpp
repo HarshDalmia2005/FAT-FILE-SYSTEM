@@ -11,8 +11,13 @@ int main() {
     std::cout << "--- Testing Format ---" << std::endl;
     if (!disk.format()) return 1;
     if (!disk.mount()) return 1;
+    std::cout << "Disk 'virtual_disk.bin' mounted successfully.\n";
 
-    FAT fat(disk);
+    Journal journal(disk);
+    journal.replay();
+
+    FAT fat(disk, &journal);
+    std::cout << "Formatting FAT... ";
     if (!fat.format()) return 1;
     
     VFS vfs(disk, fat);

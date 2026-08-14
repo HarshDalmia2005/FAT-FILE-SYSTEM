@@ -3,7 +3,7 @@
 #include <cstring>
 #include <algorithm>
 
-FAT::FAT(Disk& d) : disk(d) {
+FAT::FAT(Disk& d, Journal* j) : disk(d), journal(j) {
 }
 
 bool FAT::format() {
@@ -88,7 +88,11 @@ bool FAT::flush_block(uint32_t fat_block_index) {
     std::vector<uint32_t> buffer(entries_per_block, 0);
     std::memcpy(buffer.data(), &table[start_entry], entries_to_copy * sizeof(uint32_t));
     
-    return disk.write_block(sb.fat_start_block + fat_block_index, buffer.data());
+    if (journal) {
+        return journal->safe_write_block(sb.fat_start_block + fat_block_index, buffer.data());
+    } else {
+        return disk.write_block(sb.fat_start_block + fat_block_index, buffer.data());
+    }
 }
 
 uint32_t FAT::allocate_block() {

@@ -134,9 +134,12 @@ int main() {
         std::cerr << "Failed to mount disk. Make sure to format it first!" << std::endl;
         return 1;
     }
-    FAT fat(disk);
+    Journal journal(disk);
+    journal.replay();
+    
+    FAT fat(disk, &journal);
     if (!fat.mount()) return 1;
-    VFS vfs(disk, fat);
+    VFS vfs(disk, fat, &journal);
     
     int server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     struct sockaddr_un addr;
