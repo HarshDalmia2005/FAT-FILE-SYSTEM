@@ -306,7 +306,27 @@ bool VFS::write_file(const std::string& path, const std::vector<char>& data) {
     DirectoryEntry entry;
     uint32_t parent_block;
     uint32_t index;
-    if (!resolve_path_full(path, entry, parent_block, index)) return false;
+    if (!resolve_path_full(path, entry, parent_block, index)) {
+        // File does not exist yet; auto-create it
+        size_t last_slash = path.find_last_of('/');
+        if (last_slash == std::string::npos) return false;
+        std::string parent_path = path.substr(0, last_slash);
+        if (parent_path.empty()) parent_path = "/";
+        std::string filename = path.substr(last_slash + 1);
+        if (filename.empty()) return false;
+        
+        DirectoryEntry parent_entry;
+        if (!resolve_path(parent_path, parent_entry) || parent_entry.attributes != ATTR_DIR) {
+            return false;
+        }
+        
+        uint32_t dummy_block;
+        if (!create_entry(parent_entry.start_block, filename, ATTR_FILE, dummy_block)) {
+            return false;
+        }
+        
+        if (!resolve_path_full(path, entry, parent_block, index)) return false;
+    }
     if (entry.attributes != ATTR_FILE) return false;
     
     const Superblock& sb = disk.get_superblock();

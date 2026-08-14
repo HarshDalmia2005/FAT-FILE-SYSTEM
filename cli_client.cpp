@@ -48,11 +48,16 @@ std::string simplify_path(const std::string& path) {
 }
 
 void print_ls_output(const std::string& raw) {
+    if (raw.empty()) {
+        std::cout << DIM << "(empty directory)\n" << RESET;
+        return;
+    }
     std::istringstream iss(raw);
     std::string line;
+    bool has_items = false;
     while (std::getline(iss, line)) {
         if (line.empty()) continue;
-        // Format: "d dirname size" or "- filename size"
+        has_items = true;
         char type = line[0];
         std::istringstream lss(line.substr(2));
         std::string name;
@@ -60,14 +65,15 @@ void print_ls_output(const std::string& raw) {
         lss >> name >> size;
 
         if (type == 'd') {
-            std::cout << BRIGHT_BLUE << BOLD << "d " << RESET
-                      << BRIGHT_BLUE << BOLD << name << RESET
+            std::cout << BRIGHT_BLUE << BOLD << name << "/" << RESET
                       << DIM << "  <DIR>" << RESET << "\n";
         } else {
-            std::cout << GREEN << "- " << RESET
-                      << WHITE << name << RESET
-                      << DIM << "  " << size << " bytes" << RESET << "\n";
+            std::cout << WHITE << name << RESET
+                      << DIM << "  (" << size << " bytes)" << RESET << "\n";
         }
+    }
+    if (!has_items) {
+        std::cout << DIM << "(empty directory)\n" << RESET;
     }
 }
 
@@ -99,11 +105,41 @@ void send_command(int fd, CommandType type, const std::string& path, const std::
                 std::cout << output;
             }
         } else {
-            std::cout << BRIGHT_GREEN << "✓ " << RESET << "Done.\n";
+            if (type == CMD_LS) {
+                print_ls_output("");
+            } else if (type == CMD_READ) {
+                std::cout << DIM << "(empty file)\n" << RESET;
+            } else {
+                std::cout << BRIGHT_GREEN << "✓ " << RESET << "Done.\n";
+            }
         }
     } else {
         std::cerr << RED << BOLD << "✗ Error: " << RESET << RED << "operation failed.\n" << RESET;
     }
+}
+
+bool check_directory_exists(int fd, const std::string& path) {
+    if (path == "/") return true;
+    
+    RequestHeader req;
+    req.type = CMD_LS;
+    req.path_len = path.length();
+    req.data_len = 0;
+
+    write(fd, &req, sizeof(req));
+    if (req.path_len > 0) write(fd, path.c_str(), req.path_len);
+
+    ResponseHeader res;
+    read(fd, &res, sizeof(res));
+
+    if (res.status == 0) {
+        if (res.data_len > 0) {
+            std::vector<char> dummy(res.data_len);
+            read(fd, dummy.data(), res.data_len);
+        }
+        return true;
+    }
+    return false;
 }
 
 int main() {
@@ -165,7 +201,12 @@ int main() {
                       << "  " << CYAN << "exit" << RESET << "               Disconnect\n\n";
         } else if (cmd == "cd") {
             if (arg1.empty()) arg1 = "/";
-            cwd = simplify_path(resolve_absolute_path(cwd, arg1));
+            std::string target = simplify_path(resolve_absolute_path(cwd, arg1));
+            if (check_directory_exists(fd, target)) {
+                cwd = target;
+            } else {
+                std::cerr << RED << BOLD << "✗ Error: " << RESET << RED << "Directory '" << arg1 << "' does not exist.\n" << RESET;
+            }
         } else if (cmd == "ls") {
             std::string path = arg1.empty() ? cwd : simplify_path(resolve_absolute_path(cwd, arg1));
             send_command(fd, CMD_LS, path);
@@ -183,8 +224,13 @@ int main() {
             std::string text;
             std::getline(ss, text);
             if (!text.empty() && text[0] == ' ') text = text.substr(1);
-            std::vector<char> data(text.begin(), text.end());
-            send_command(fd, CMD_WRITE, simplify_path(resolve_absolute_path(cwd, arg1)), data);
+            if (arg1.empty() || text.empty()) {
+                std::cerr << YELLOW << "Usage: " << RESET << "write <filename> <text content>\n"
+                          << DIM << "Example: write notes.txt Hello World!\n" << RESET;
+            } else {
+                std::vector<char> data(text.begin(), text.end());
+                send_command(fd, CMD_WRITE, simplify_path(resolve_absolute_path(cwd, arg1)), data);
+            }
         } else {
             std::cerr << YELLOW << "Unknown command: " << RESET << "'" << cmd << "'. "
                       << DIM << "Type 'help' for usage.\n" << RESET;
