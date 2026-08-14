@@ -2,7 +2,7 @@ CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -pthread -O2
 LDFLAGS = -pthread
 
-SOURCES = main.cpp Disk.cpp
+SOURCES = main.cpp Disk.cpp FAT.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 TARGET = vfs_test
 
