@@ -2,6 +2,68 @@
 
 This project is a disk-backed FAT (File Allocation Table) virtual file system implemented in C++. It utilizes POSIX APIs for threading, synchronization, and binary I/O to simulate a persistent storage environment. The architecture follows a multi-phase approach, beginning with fundamental disk abstraction and culminating in a concurrent client-server model with metadata journaling.
 
+## 🚀 Quick Start / How to Run
+
+### 1. Build the Project
+```bash
+make clean && make
+```
+This compiles the core objects and generates three executables: `vfs_test`, `vfs_server`, and `vfs_client`.
+
+### 2. Format the Virtual Disk
+```bash
+./vfs_test
+```
+*Must be run once before starting the server.* This initializes `virtual_disk.bin`, formats the FAT table, sets up the circular journal, and initializes the root directory.
+
+### 3. Start the Server Daemon (Terminal 1)
+```bash
+./vfs_server
+```
+The server mounts the virtual disk, replays any pending journal transactions for crash recovery, and listens on `/tmp/vfs_socket`.
+
+### 4. Connect the Interactive CLI Client (Terminal 2)
+```bash
+./vfs_client
+```
+Starts an interactive terminal shell with colored prompts. Example commands:
+```text
+vfs@fs:/$ mkdir docs
+vfs@fs:/$ cd docs
+vfs@fs:/docs$ write notes.txt Hello Virtual File System!
+vfs@fs:/docs$ read notes.txt
+Hello Virtual File System!
+vfs@fs:/docs$ ls
+notes.txt  (26 bytes)
+vfs@fs:/docs$ cd /
+vfs@fs:/$ exit
+```
+
+### 5. Run Concurrency Stress Test (Optional)
+```bash
+./stress_test.sh
+```
+Spawns 100 concurrent reader/writer client processes to verify thread safety and lock synchronization.
+
+---
+
+### Available CLI Commands
+
+| Command | Syntax | Description |
+|---|---|---|
+| `ls` | `ls [path]` | List contents of current or specified directory |
+| `cd` | `cd <path>` | Change working directory (validates existence on server) |
+| `mkdir` | `mkdir <path>` | Create a new directory |
+| `rmdir` | `rmdir <path>` | Remove an empty directory |
+| `touch` | `touch <path>` | Create an empty file |
+| `rm` | `rm <path>` | Remove a file |
+| `write` | `write <path> <text>` | Write text content to a file (auto-creates file if missing) |
+| `read` | `read <path>` | Display contents of a file |
+| `help` | `help` | Show usage instructions |
+| `exit` | `exit` | Disconnect from server |
+
+---
+
 ## Phase 1: Core Disk Abstraction & Sparse File Initialization
 
 In this initial phase, the foundational block-level I/O mechanisms are established. The virtual disk acts as the raw storage medium, simulating a physical hard drive by treating a large file on the host OS as a block device.
