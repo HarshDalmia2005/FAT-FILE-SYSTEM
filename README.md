@@ -121,5 +121,54 @@ All VFS tests passed!
 Disk 'virtual_disk.bin' unmounted.
 ```
 
-*Upcoming in Phase 4: Server Daemon & Interactive CLI Client.*
+## Phase 4: Server Daemon & Interactive CLI Client
 
+This phase splits the file system into a robust Client-Server architecture, moving it closer to a true operating system driver model where a central daemon manages the hardware (virtual disk) while user applications communicate with it via system calls (IPC).
+
+### 1. IPC Protocol
+A tightly packed binary communication protocol (`Protocol.h`) defines how clients send requests to the server over a UNIX domain socket (`/tmp/vfs_socket`). The protocol encapsulates commands (`CMD_MKDIR`, `CMD_READ`, etc.), path strings, and raw binary data payloads in a structured header.
+
+### 2. VFS Server Daemon
+The `vfs_server` executable mounts the disk, initializes the FAT and VFS components, and binds to the UNIX domain socket. It operates as an infinite event loop, accepting connections from clients and dispatching their requests to the underlying VFS. The server handles all disk I/O, maintaining the integrity of the file system structure.
+
+### 3. Interactive CLI Client
+The `vfs_client` executable provides a Read-Eval-Print Loop (REPL) shell. It maintains a Current Working Directory (CWD) for the user, resolves relative paths, and provides familiar POSIX-like commands:
+- `mkdir <path>`, `rmdir <path>`
+- `touch <path>`, `rm <path>`
+- `ls`
+- `cd <path>`
+- `read <path>`, `write <path> <text>`
+
+### How to Compile and Test Phase 4
+You must first run `./vfs_test` to ensure the disk is freshly formatted. Then, you can run the server in the background (or a separate terminal) and use the interactive client.
+
+```bash
+make clean && make
+
+# 1. Format the disk
+./vfs_test
+
+# 2. Start the server in the background
+./vfs_server &
+
+# 3. Start the client shell
+./vfs_client
+```
+
+Inside the client shell, you can execute commands like:
+```text
+vfs:/$ mkdir docs
+Success.
+vfs:/$ cd docs
+vfs:/docs$ touch hello.txt
+Success.
+vfs:/docs$ write hello.txt Hello World!
+Success.
+vfs:/docs$ ls
+- hello.txt 12
+vfs:/docs$ read hello.txt
+Hello World!
+vfs:/docs$ exit
+```
+
+*Upcoming in Phase 5: Thread-Safe Readers-Writer Locks.*

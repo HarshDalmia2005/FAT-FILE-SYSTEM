@@ -45,4 +45,16 @@ public:
 
     // Reads all entries in a directory (for ls)
     std::vector<DirectoryEntry> list_directory(uint32_t dir_start_block);
+
+    // Resolves path and gets parent info for modification
+    bool resolve_path_full(const std::string& path, DirectoryEntry& out_entry, uint32_t& out_parent_block, uint32_t& out_index);
+
+    // Removes a file or an empty directory
+    bool remove_entry(const std::string& path);
+
+    // Reads entire file content
+    bool read_file(const std::string& path, std::vector<char>& out_data);
+
+    // Writes/overwrites file content
+    bool write_file(const std::string& path, const std::vector<char>& data);
 };
