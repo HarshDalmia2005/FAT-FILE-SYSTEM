@@ -51,4 +51,75 @@ Read/Write verification passed for block 500.
 Disk 'virtual_disk.bin' unmounted.
 ```
 
-*Upcoming in Phase 2: FAT Implementation & Block Allocation.*
+## Phase 2: FAT Implementation & Block Allocation
+
+In this phase, the File Allocation Table (FAT) is implemented to track and manage block allocation across the virtual disk, similar to how MS-DOS or early Windows systems managed files.
+
+### 1. In-Memory FAT Caching
+The FAT is essentially an array of 32-bit integers, where each index represents a block on the disk. Instead of reading the FAT from disk on every allocation, the `FAT` class caches the entire table in memory (requiring roughly 1MB of RAM for a 1GB disk). This allows for lightning-fast block lookups and chain traversals. Changes are written back to the physical disk blocks on a write-through basis using `flush_block()`.
+
+### 2. System Block Reservation
+During formatting, the FAT intelligently marks critical system structures as reserved (indicated by an `EOF` marker, `0xFFFFFFFF`). This ensures that the Superblock, the FAT array itself, the Journal, and the Root Directory blocks are never accidentally allocated to user files.
+
+### 3. Allocation and Chaining
+The FAT supports dynamically allocating free blocks and chaining them together to form larger files. `allocate_block()` performs a linear scan to find a free block (`0x00000000`), marks it as `EOF`, and returns its index. When a file is deleted, `free_chain()` traverses the FAT chain starting from the file's first block, efficiently marking all associated blocks as free and minimizing redundant disk writes by tracking "dirty" FAT blocks.
+
+## Phase 3: Directory Structure & File Metadata
+
+The Virtual File System (VFS) layer builds upon the Disk and FAT abstractions to create a hierarchical, user-facing directory structure.
+
+### 1. The Directory Entry Struct
+Files and directories are represented by a precisely packed 256-byte `DirectoryEntry` structure:
+- **Filename**: Up to 243 characters.
+- **Start Block**: The index of the first block in the FAT chain.
+- **Size**: The total size of the file in bytes.
+- **Attributes**: A byte flag indicating if the entry is a file, a directory, or unused.
+
+By enforcing a strict 256-byte alignment, exactly 16 directory entries fit perfectly into a single 4096-byte block without fragmentation.
+
+### 2. Path Resolution
+The VFS can parse absolute paths (e.g., `/docs/hello.txt`) and resolve them to specific disk blocks. The `resolve_path()` function splits the path into components, reads the root directory, searches for the `docs` folder, and sequentially traverses the directory tree until the target file's metadata is located.
+
+### 3. Dynamic Directory Expansion
+Unlike simple file systems that limit the number of files in a directory, this VFS supports infinite directory growth. When `create_entry()` detects that a directory block is full, it automatically asks the FAT for a new block, links it to the existing directory chain, and initializes it with empty entries, providing seamless directory expansion.
+
+### How to Compile and Test Phases 1-3
+A unified test driver (`main.cpp`) is provided to verify the formatting, FAT chaining, directory creation, and path resolution simultaneously.
+
+```bash
+# Compile the project
+make clean && make
+
+# Run the test executable
+./vfs_test
+```
+
+Expected output:
+```
+--- Testing Format ---
+Disk 'virtual_disk.bin' formatted successfully.
+Total Blocks: 262144
+FAT Start: Block 1 (256 blocks)
+Journal Start: Block 257 (256 blocks)
+Root Dir Start: Block 513
+Disk 'virtual_disk.bin' mounted successfully.
+Formatting FAT... writing to disk.
+VFS root directory formatted.
+
+--- Testing VFS ---
+Created directory 'docs'.
+Created file 'hello.txt' inside 'docs'.
+
+--- Testing Path Resolution ---
+Resolved '/docs/hello.txt'. Start Block: 515
+
+--- Testing Directory Listing ---
+Root contains 1 entry.
+'docs' contains 1 entry. Name: hello.txt
+
+All VFS tests passed!
+Disk 'virtual_disk.bin' unmounted.
+```
+
+*Upcoming in Phase 4: Server Daemon & Interactive CLI Client.*
+
