@@ -220,4 +220,4 @@ When the VFS server daemon starts and mounts the virtual disk, it iterates throu
 If it discovers any `PENDING` transactions, it indicates that a crash occurred *after* logging but *before* or *during* the actual disk write. The server automatically recovers from this by reading the data from the journal and re-writing it to the target block on the disk, followed by marking the entry as `COMMITTED`. This ensures that the file system structure is always logically consistent.
 
 ### The Complete System
-The FAT Virtual File System is now complete! It is a fully functional, multithreaded, crash-resilient file system simulator that mimics the core concepts used in OS development.
+It is a fully functional, multithreaded, crash-resilient file system simulator that mimics the core concepts used in OS development.
